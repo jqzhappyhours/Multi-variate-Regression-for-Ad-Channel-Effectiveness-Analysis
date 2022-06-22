@@ -1,0 +1,608 @@
+
+## **Homework-2**
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+* * *
+
+```{r load, message=FALSE, warning=FALSE}
+##Load Libraries
+library(readxl)
+library(Hmisc) 
+library(MASS)
+library(dplyr)
+library(ggplot2)
+library(skimr)
+```
+
+* * *
+
+**Evaluating the Focal Model **
+
+In the first part, we are evaluating the validity of the focal model as described in the homework.
+
+The focal model is given as :
+
+$$Y_t = \lambda Y_{t-1} + \beta_1 Z_{1t} + \beta_2 Z_{2t} + ... +intercept+ \epsilon_t$$
+
+The focal model will include :
+
+- Lagged Sales
+- Intercept
+- Square rooted Variables (to model diminishing returns). The choice of variables will depend on further analysis, as shown below.
+
+
+```{r}
+# Import Data
+multdata <- read_excel("HW2_MultimediaHW.xlsx")
+```
+
+
+```{r include=FALSE}
+# Data Summary
+summary(multdata)
+colnames(multdata)
+skim(multdata)
+```
+
+```{r}
+#Plotting a correlation plot between all the variables in the dataset
+library(psych) 
+corPlot(multdata, cex = 0.36,xlas=2,ylas=1,MAR=2)
+```
+
+From the above plot, we see that in the online ads, search and portals are highly correlated with a value of 0.88
+
+```{r}
+# Extract Vectors of Dependent and Independent Variables
+
+Sales <-multdata$`Sales (units)`
+Stm1<-Lag(Sales,shift=1) #creating the lag of sales value
+Stm1 <- Stm1[-1]
+Sales <- Sales[-1]
+
+Catlg.Exist <-multdata$`Catalogs_ExistCust`
+Catlg.Winback <-multdata$`Catalogs_Winback`
+Catlg.NewCust <-multdata$`Catalogs_NewCust`
+Mailings <-multdata$`Mailings`
+Banner <-multdata$`Banner`
+Search <-multdata$`Search`
+Newsl <-multdata$`Newsletter`
+Retarg <-multdata$`Retargeting`
+Portal <-multdata$`Portals`
+```
+
+
+```{r}
+#Diminishing Returns
+SCatlg.Exist <- sqrt(Catlg.Exist)[-1]
+SCatlg.Winback <-sqrt(Catlg.Winback)[-1]
+SCatlg.NewCust <-sqrt(Catlg.NewCust)[-1]
+SMailings <-sqrt(Mailings)[-1]
+SBanner <- sqrt(Banner)[-1]
+SSearch <- sqrt(Search)[-1]
+SNewsl <- sqrt(Newsl)[-1]
+SRetarg <- sqrt(Retarg)[-1]
+SPortal <- sqrt(Portal)[-1]
+
+```
+
+**Final Model: Running a focal model with intercept**
+
+```{r}
+focal_model <- lm(Sales ~ Stm1 + 
+                  SCatlg.Exist +
+                SCatlg.Winback +
+                SCatlg.NewCust +  
+                SMailings +
+                SNewsl +
+                SPortal)
+summary(focal_model)
+AIC(focal_model)
+```
+
+```{r}
+
+# Elasticity --- 
+
+coeff.focal <- focal_model$coefficients
+eta.focal <- c()
+
+for (i in 3:(length(coeff.focal))) {
+  
+  xbar <- mean(get(names(coeff.focal)[i]))
+  print(coeff.focal[i])
+  placeholder <- (coeff.focal[i]*sqrt(xbar))/(2*(coeff.focal[1] + coeff.focal[i]*sqrt(xbar)))
+  eta.focal <- append(eta.focal, placeholder)
+  
+}
+
+eta.focal
+
+```
+
+
+Variables such as Banner, Social Media have been neglected because they consist of more than 70% null values.
+
+We have also observed that 'Search' is highly correlated with 'Retargetting' with a value of 0.83 and highly correlated with 'Portals' with a value of 0.88. 'Retargetting' and 'Portals' are inter-correlated with a value of 0.7.
+
+We are neglecting the Search and Retargetting in our final focal model since this model provides us with a better AIC value.
+
+**Model Iteration 1 : Full Model (All variables) with Intercept **
+
+```{r}
+#Running Full Model with intercept
+model.1 <- lm(Sales~
+                Stm1 +
+                SCatlg.Exist +
+                SCatlg.Winback +
+                SCatlg.NewCust +  
+                SMailings +
+                SBanner +
+                SSearch +
+                SNewsl +
+                SRetarg +
+                SPortal
+              )
+
+summary(model.1)
+AIC(model.1)
+BIC(model.1)
+```
+
+As we can see above Adj R-squared is 0.2087, which is pretty low. Most importantly, F-statistic p-value = 0.06231, which means the overall model is insignificant at 5% significance level. 
+
+
+Checking to see if removal of the intercept makes any difference:
+
+**Model Iteration 2 : Full Model (All variables) without Intercept **
+
+
+```{r}
+# Running Full Model Without Intercept
+model.2 <- lm(Sales~
+                0 +
+                Stm1 +
+                SCatlg.Exist +
+                SCatlg.Winback +
+                SCatlg.NewCust +  
+                SMailings +
+                SBanner +
+                SSearch +
+                SNewsl +
+                SRetarg +
+                SPortal
+)
+
+summary(model.2)
+AIC(model.2)
+BIC(model.2)
+```
+
+Adjusted R-squared shoots up to **0.9789**!   
+
+Multiple R-squared of 0.984 says that 98.4% of the variation in Sales is already explained by the model.             
+
+But this is misleading, since the removal of intercept or constant term often increases the R-Sq of the model as sum of squares regression may increase relatively more than Sum of squares residuals by forcing the regression line to go through origin [1], and may also bias the other coefficients. We are not reasonably certain in this case, that zero advertising should lead to zero sales, therefore there is no justification to remove the intercept. 
+
+For example, we can see that if we only consider the lagged Sales variable and remove the intercept (model `t1` below), the R-squared still remains exceedingly high and seems to say that 96% of the variation in Sales is explained by lagged Sales itself, which is not true.
+
+```{r}
+t1 <- lm(formula = Sales ~ Stm1 - 1)
+summary(t1)
+AIC(t1)
+```
+
+Therefore, we will discard this model (***model.2***) and see if we can improve on ***model.1***
+
+
+**Model Iteration 3 : Reduced Model (Using Stepwise Selection via least AIC method) with Intercept **
+
+Let us use Stepwise Selection Method on the first Full Model `model.1` to make our model more parsimonious and also retain only the variables that contribute to independently explain the variation in sales. We are using the least AIC for the stepwise selection criteria. 
+
+To this end, we will use the `stepAIC()` function in the `MASS` R package, that iteratively handles removal of independent variables in a stepwise fashion and applies the least AIC rule to select the most parsimonious model. 
+
+```{r}
+model.3 <- stepAIC(model.1, k=2, trace=FALSE)
+summary(model.3)
+AIC(model.3)
+```
+
+As we can see above, the overall model is statistically significant now (F Statistic p-value=0.004345, which is less than 0.05). The Adj R-squared is higher than `model.1`.
+
+The above can be considered the final Focal Model. However, below is a major the concern regarding the focal model -
+
+***The coefficients of `SCatlg.Exist`(-19.38), `SCatlg.NewCust` (-19.38), `SRetarg`(-85.39) indicate that increase in advertising catalogs on Existing or New Customers as well as Retargeting customers is associated with a decrease in Sales, which is unreasonable (Can also be seen in the trends plot provided separately that existing customer catalog spending has similar trends to Sales).***
+
+**Reasoning**    
+
+The negative trend of current advertising spend to Sales is due to the fact that the advertising done in previous months have typically increased the Sales in current month. However current month's advertising spend might have been reduced exactly for that reason, to take advantage of 'market memory'.
+
+If we check our line plot of the variation of Existing Customer Catalog Spending and Variation in Sales, we notice that, following trends in general marketing prices, the advertising was increased when sales came down, in the following month the Sales went up, consequently there was no need to spend as much on that channel, therefore advertising spend was lowered.
+
+Based on the above reasoning, we could try a regression model based on lagged variables. In our extended analysis, we have used 1 month lagged data as the regressors on current month's sales.
+
+$$Y_t = \lambda Y_{t-1} + \beta_1 Z_{1(t-1)} + \beta_2 Z_{2(t-1)} + ... +intercept+ \epsilon_t$$
+
+```{r}
+# Create Lagged Independent Variables
+LCatlg.Exist <-Lag(Catlg.Exist,shift=1)
+LCatlg.Winback <-Lag(Catlg.Winback,shift=1)
+LCatlg.NewCust <-Lag(Catlg.NewCust,shift=1)
+LMailings <-Lag(Mailings,shift=1)
+LBanner <- Lag(Banner,shift=1)
+LSearch <-Lag(Search,shift=1)
+LNewsl <- Lag(Newsl,shift=1)
+LRetarg <- Lag(Retarg,shift=1)
+LPortal <- Lag(Portal,shift=1)
+```
+
+
+```{r}
+# Model Diminishing Returns on Lagged variables
+SLCatlg.Exist <- sqrt(LCatlg.Exist)[-1]
+SLCatlg.Winback <-sqrt(LCatlg.Winback)[-1]
+SLCatlg.NewCust <-sqrt(LCatlg.NewCust)[-1]
+SLMailings <-sqrt(LMailings)[-1]
+SLBanner <- sqrt(LBanner)[-1]
+SLSearch <- sqrt(LSearch)[-1]
+SLNewsl <- sqrt(LNewsl)[-1]
+SLRetarg <- sqrt(LRetarg)[-1]
+SLPortal <- sqrt(LPortal)[-1]
+```
+
+**Model Iteration 4 : Full Model (with all lagged variables) with Intercept**
+
+```{r}
+#Running Full Model with intercept and all lagged variables
+model.L <- lm(Sales~
+                Stm1 +
+                SLCatlg.Exist +
+                SCatlg.Winback +
+                SLCatlg.NewCust +  
+                SLMailings +
+                SLBanner +
+                SLSearch +
+                SLNewsl +
+                SLRetarg +
+                SLPortal
+              )
+summary(model.L)
+AIC(model.L)
+BIC(model.L)
+```
+
+This model is overall significant (F-statistic p-value: 0.003303) and has a higher R-squared = 0.5432, which means it explains 54.32% of the variation in Sales. However, the model is not parsimonious, there are multiple variables which are contributing to the model. 
+
+In the next step, lets do a Stepwise Selection process on the above model to drop variables one at a time iteratively and select the model with the least AIC. As done before, we use the `stepAIC()` function to accomplish this.
+
+**Model Iteration 5 : Step-wise Reduced Model**
+
+```{r}
+model.AICL <- stepAIC(model.L, k=2, trace=FALSE)
+summary(model.AICL)
+AIC(model.AICL)
+```
+
+**Comparison of RMSE of All Models**
+
+***RMSE of the 3 non-lagged models (with an without intercepts, full, reduced and lagged step-wise reduced): ***
+
+```{r}
+model.1.resid <- Sales - model.1$fitted.values
+model.1.RMSE <- sqrt(mean(model.1.resid^2))
+model.1.RMSE
+```
+
+```{r}
+model.2.resid <- Sales - model.2$fitted.values
+model.2.RMSE <- sqrt(mean(model.2.resid^2))
+model.2.RMSE
+```
+
+```{r}
+model.3.resid <- Sales - model.3$fitted.values
+model.3.RMSE <- sqrt(mean(model.3.resid^2))
+model.3.RMSE
+```
+
+```{r}
+model.AICL.resid <- Sales - model.AICL$fitted.values
+model.AICL.RMSE <- sqrt(mean(model.AICL.resid^2))
+model.AICL.RMSE
+```
+
+As we can see our step-wise reduced lagged model has the least RMSE.
+
+**Justifications for the Reduced Lag Model**
+
+Observations from `model.AICL` :
+
+1) The model has the least RMSE (536.1) among all models full or reduced, with or without intercept
+
+2) Most of the variables in the model are now statistically significant. 
+
+3) Unlike the non-lagged model, the Coefficients of the model reflect the positive relationship of different advertising channels on Sales (e.g. `SLCatlg.Exist`: 36.5817).
+
+4) The model also has the least AIC of all models computed before : 647.6673
+
+
+"<b>Functional Forms</b>"
+
+**Log-Log Model**
+
+So far we have tried all models with square-rooted variables. Let us try different other functional forms such as log-log, lin-log:
+
+```{r}
+# Model Diminishing Returns on Lagged variables
+LLCatlg.Exist <- log(1 + LCatlg.Exist)[-1]
+LLCatlg.Winback <-log(1 + LCatlg.Winback)[-1]
+LLCatlg.NewCust <-log(1 + LCatlg.NewCust)[-1]
+LLMailings <-log(1 + LMailings)[-1]
+LLBanner <- log(1 + LBanner)[-1]
+LLSearch <- log(1 + LSearch)[-1]
+LLNewsl <- log(1 + LNewsl)[-1]
+LLRetarg <- log(1 + LRetarg)[-1]
+LLPortal <- log(1 + LPortal)[-1]
+
+# Transform the response variable to create a log-log model
+LSales <- log(1+Sales)
+```
+
+
+```{r}
+
+#Running Full Model without intercept and all lagged variables
+model.loglog <- lm(LSales ~
+                Stm1 +
+                LLCatlg.Exist +
+                LLCatlg.Winback +
+                LLCatlg.NewCust +  
+                LLMailings +
+                LLBanner +
+                LLSearch +
+                LLNewsl +
+                LLRetarg +
+                LLPortal
+              )
+summary(model.loglog)
+AIC(model.loglog)
+BIC(model.loglog)
+```
+
+Running stepwise selection on the full log-log model:
+
+```{r}
+model.loglog1 <- stepAIC(model.loglog, k=2, trace=FALSE)
+summary(model.loglog1)
+AIC(model.loglog1)
+```
+
+***RMSE of Log-Log Model: ***
+
+```{r}
+#RMSE of log-log model
+model.loglog1.resid <- Sales - exp(model.loglog1$fitted.values)
+model.loglog1.RMSE <- sqrt(mean(model.loglog1.resid^2))
+model.loglog1.RMSE
+```
+```{r}
+#RMSE of step-wise log-log model
+model.loglog.resid <- Sales - exp(model.loglog$fitted.values)
+model.loglog.RMSE <- sqrt(mean(model.loglog.resid^2))
+model.loglog.RMSE
+```
+
+Since, 'Search' and 'Portals' are highly correlated, wanted to see their effect on the model individually:
+
+```{r}
+#Running the log-log model without search
+model.loglog_withoutsearch <- lm(LSales ~
+                Stm1 +
+                LLCatlg.Exist +
+                LLCatlg.Winback +
+                LLCatlg.NewCust +  
+                LLMailings +
+                LLBanner +
+                LLNewsl +
+                LLRetarg +
+                LLPortal
+              )
+summary(model.loglog_withoutsearch)
+AIC(model.loglog_withoutsearch)
+BIC(model.loglog_withoutsearch)
+```
+
+```{r}
+model.loglog_withoutsearch.resid <- Sales - exp(model.loglog_withoutsearch$fitted.values)
+model.loglog_withoutsearch.RMSE <- sqrt(mean(model.loglog_withoutsearch.resid^2))
+model.loglog_withoutsearch.RMSE
+```
+
+```{r}
+#Running the log-log model without portals
+model.loglog_withoutportals <- lm(LSales ~
+                Stm1 +
+                LLCatlg.Exist +
+                LLCatlg.Winback +
+                LLCatlg.NewCust +  
+                LLMailings +
+                LLSearch +
+                LLBanner +
+                LLNewsl +
+                LLRetarg
+              )
+summary(model.loglog_withoutportals)
+AIC(model.loglog_withoutportals)
+BIC(model.loglog_withoutportals)
+```
+
+```{r}
+model.loglog_withoutportals.resid <- Sales - exp(model.loglog_withoutportals$fitted.values)
+model.loglog_withoutportals.RMSE <- sqrt(mean(model.loglog_withoutportals.resid^2))
+model.loglog_withoutportals.RMSE
+```
+
+**Lin-Log Model**
+
+***Running Full Model with intercept and all lagged variables***
+
+```{r}
+model.linlog <- lm(Sales ~
+                Stm1 +
+                LLCatlg.Exist +
+                LLCatlg.Winback +
+                LLCatlg.NewCust +  
+                LLMailings +
+                LLBanner +
+                LLSearch +
+                LLNewsl +
+                LLRetarg +
+                LLPortal
+              )
+summary(model.linlog)
+AIC(model.linlog)
+BIC(model.linlog)
+```
+
+```{r}
+model.linlog1 <- stepAIC(model.linlog, k=2, trace=FALSE)
+summary(model.linlog1)
+AIC(model.linlog1)
+```
+
+***RMSE of Lin-Log Model: ***
+
+```{r}
+model.linlog1.resid <- Sales - model.linlog1$fitted.values
+model.linlog1.RMSE <- sqrt(mean(model.linlog1.resid^2))
+model.linlog1.RMSE
+```
+
+"<b>Synergy</b>"
+
+Calculating Synergy for the final model:
+
+```{r}
+
+
+# Create dataframes 
+reduced_data_df <- as.data.frame(cbind(SCatlg.Exist, SCatlg.Winback, SCatlg.NewCust, SMailings, SSearch, SNewsl, SRetarg, SPortal))
+full.model <- lm(Sales ~ Stm1 + ., data = reduced_data_df)
+step.model <- stepAIC(full.model, direction = "both", 
+                      trace = FALSE)
+coeff <- step.model$coefficients
+
+```
+
+```{r}
+# Elasticity --- Incremental sales unit for increase in sqrt(variable)
+eta <- c()
+for (i in 2:length(coeff)) {
+  
+  xbar <- mean(get(names(coeff)[i]))
+  print(coeff[i])
+  placeholder <- (coeff[i]*sqrt(xbar))/(2*(coeff[1] + coeff[i]*sqrt(xbar)))
+  eta <- append(eta, placeholder)
+  
+}
+
+# Calculate RMSE
+
+model.residuals <-  Sales - full.model$fitted.values
+model.RMSE <- sqrt(mean(model.residuals^2))
+model.RMSE
+
+# Output
+summary(full.model)
+AIC(full.model)
+BIC(full.model)
+eta
+
+```
+
+***Synergy - All Variables, excl. Social Media ***
+
+```{r}
+data_df_with_banner <- as.data.frame(cbind(reduced_data_df, SBanner))
+full.model.synergy <- lm(Sales ~ Stm1 + . , data = data_df_with_banner)
+step.model.synergy <- stepAIC(full.model.synergy, scope = . ~ .^2, direction = "both", 
+                        trace = FALSE)
+coeff.synergy <- step.model.synergy$coefficients
+
+# Elasticity --- Lambda calculated
+
+eta.synergy <- c()
+
+#MANUAL****
+non_interaction_var <- 6
+
+for (i in 3:(non_interaction_var+2)) {
+  
+  xbar <- mean(get(names(coeff.synergy)[i]))
+  print(coeff.synergy[i])
+  placeholder <- (coeff.synergy[i]*sqrt(xbar))/(2*(coeff.synergy[1] + coeff.synergy[i]*sqrt(xbar)))
+  eta.synergy <- append(eta.synergy, placeholder)
+  
+}
+
+summary(step.model.synergy)
+AIC(step.model.synergy)
+BIC(step.model.synergy)
+eta.synergy
+model.synergy.residuals <-  Sales - full.model.synergy$fitted.values
+model.synergy.RMSE <- sqrt(mean(model.synergy.residuals^2))
+model.synergy.RMSE
+```
+
+***Synergy - All Variables, excl. Social Media & Banner ***
+
+```{r}
+full.model.synergy.2 <- lm(Sales ~ Stm1 + . , data = reduced_data_df)
+step.model.synergy.2 <- stepAIC(full.model.synergy.2, scope = . ~ .^2, direction = "both", 
+                        trace = FALSE)
+coeff.synergy.2 <- step.model.synergy.2$coefficients
+
+# Elasticity --- Lambda calculated
+
+eta.synergy.2 <- c()
+
+# MANUAL ****
+non_interaction_var <- 6
+
+
+for (i in 3:(non_interaction_var+2)) {
+  
+  xbar <- mean(get(names(coeff.synergy.2)[i]))
+  print(coeff.synergy.2[i])
+  placeholder <- (coeff.synergy.2[i]*sqrt(xbar))/(2*(coeff.synergy.2[1] + coeff.synergy.2[i]*sqrt(xbar)))
+  eta.synergy.2 <- append(eta.synergy.2, placeholder)
+  
+}
+
+
+summary(step.model.synergy.2)
+AIC(step.model.synergy.2)
+BIC(step.model.synergy.2)
+eta.synergy.2
+model.synergy.2.residuals <-  Sales - full.model.synergy.2$fitted.values
+model.synergy.2.RMSE <- sqrt(mean(model.synergy.2.residuals^2))
+model.synergy.2.RMSE
+```
+
+
+```{r}
+focal_data_df <- as.data.frame(cbind(SCatlg.Exist, SCatlg.Winback, SCatlg.NewCust, SMailings, SNewsl, SPortal))
+
+focal.model.synergy <- lm(Sales ~ Stm1 + . , data = focal_data_df)
+step.model.focal.synergy <- stepAIC(focal.model.synergy, scope = . ~ .^2, direction = "both", 
+                        trace = FALSE)
+
+summary(step.model.focal.synergy)
+AIC(step.model.focal.synergy)
+
+```
+
+
